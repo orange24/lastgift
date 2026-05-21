@@ -1,0 +1,27 @@
+# config + secrets
+includes/config.php
+
+# notes + settings ของ Claude Code
+CLAUDE.md
+.claude/
+
+# uploads — เก็บโครงสร้างโฟลเดอร์ แต่ไม่เอาไฟล์ขึ้น
+uploads/**/*
+!uploads/
+!uploads/**/
+!uploads/**/.gitkeep
+!uploads/.htaccess
+!uploads/**/.htaccess
+
+# system / editor
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+.idea/
+.vscode/
+
+# one-time setup scripts (สร้าง admin / import)
+scripts/create_admin*.php
+scripts/import_donations_*.php
+setup_admin.php
