@@ -144,14 +144,19 @@ require __DIR__ . '/includes/header.php';
             <span>ชื่อเล่น <em>*</em></span>
             <input type="text" name="donor_name" required maxlength="160">
           </label>
-          <label>
-            <span>ห้อง <em>*</em></span>
-            <select name="room" required>
-              <option value="">— เลือก —</option>
-              <option value="A">ห้อง A</option>
-              <option value="B">ห้อง B</option>
-            </select>
-          </label>
+          <div class="room-field">
+            <span class="room-label">ห้อง <em>*</em></span>
+            <div class="room-pills">
+              <label class="room-pill">
+                <input type="radio" name="room" value="A" required>
+                <span>ห้อง A</span>
+              </label>
+              <label class="room-pill">
+                <input type="radio" name="room" value="B" required>
+                <span>ห้อง B</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="row">

@@ -18,22 +18,38 @@ header('Content-Type: text/plain; charset=utf-8');
 $raw = file_get_contents('php://input');
 $sig = isset($_SERVER['HTTP_X_LINE_SIGNATURE']) ? $_SERVER['HTTP_X_LINE_SIGNATURE'] : '';
 
+// debug log — ดูได้ที่ /uploads/line_webhook.log
+$log_path = __DIR__ . '/uploads/line_webhook.log';
+function lg_log($line) {
+    global $log_path;
+    @file_put_contents($log_path,
+        '[' . date('Y-m-d H:i:s') . '] ' . $line . "\n",
+        FILE_APPEND);
+}
+lg_log('---- INCOMING ----');
+lg_log('signature header: ' . ($sig === '' ? '(none)' : substr($sig, 0, 20) . '...'));
+lg_log('body (' . strlen($raw) . ' bytes): ' . substr($raw, 0, 500));
+
 $secret = trim(setting('line_channel_secret'));
 if ($secret === '') {
+    lg_log('FAIL: line_channel_secret empty');
     error_log('[LINE webhook] missing line_channel_secret in settings');
     http_response_code(200);
     echo 'config missing';
     exit;
 }
+lg_log('channel_secret len: ' . strlen($secret));
 
 // verify HMAC-SHA256 signature
 $expected = base64_encode(hash_hmac('sha256', $raw, $secret, true));
 if (!hash_equals($expected, $sig)) {
+    lg_log('FAIL: signature mismatch — expected=' . substr($expected, 0, 20) . '... got=' . substr($sig, 0, 20) . '...');
     error_log('[LINE webhook] signature mismatch');
     http_response_code(403);
     echo 'bad signature';
     exit;
 }
+lg_log('signature OK');
 
 $data = json_decode($raw, true);
 if (!is_array($data) || empty($data['events'])) {
@@ -42,10 +58,14 @@ if (!is_array($data) || empty($data['events'])) {
     exit;
 }
 
-foreach ($data['events'] as $event) {
+foreach ($data['events'] as $i => $event) {
+    $type = isset($event['type']) ? $event['type'] : '?';
+    $msg  = isset($event['message']['text']) ? $event['message']['text'] : '';
+    lg_log("event#$i type=$type text=" . substr($msg, 0, 100));
     try {
         handle_event($event);
     } catch (Exception $e) {
+        lg_log('event#'.$i.' EXCEPTION: ' . $e->getMessage());
         error_log('[LINE webhook] event error: ' . $e->getMessage());
     }
 }
@@ -70,13 +90,17 @@ function handle_event($event) {
     $cmd = mb_strtolower($cmd, 'UTF-8');
 
     if (in_array($cmd, ['ยอด', 'สรุป', 'สรุปยอด', 'summary', 'total'], true)) {
+        lg_log('matched: summary');
         reply_summary($reply_token);
     } elseif (in_array($cmd, ['แคมเปญ', 'campaigns', 'list'], true)) {
+        lg_log('matched: campaigns');
         reply_campaign_list($reply_token);
     } elseif (in_array($cmd, ['help', 'ช่วย', '?', 'commands', 'คำสั่ง'], true)) {
+        lg_log('matched: help');
         reply_help($reply_token);
+    } else {
+        lg_log('no match for cmd="' . $cmd . '"');
     }
-    // else: ignore (ไม่ตอบกลับเมื่อพิมพ์อะไรอื่น)
 }
 
 function reply_summary($reply_token) {

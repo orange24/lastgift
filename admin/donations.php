@@ -11,6 +11,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $op = isset($_POST['op']) ? $_POST['op'] : '';
     $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 
+    if ($op === 'save_new') {
+        $cid    = (int)(isset($_POST['campaign_id']) ? $_POST['campaign_id'] : 0);
+        $camp   = $cid > 0 ? db_one('SELECT id FROM campaigns WHERE id = ?', [$cid]) : null;
+        if (!$camp) { flash('err', 'เลือกแคมเปญก่อน'); redirect('donations.php?action=new'); }
+
+        $donor_name = trim(isset($_POST['donor_name']) ? $_POST['donor_name'] : '');
+        $room       = isset($_POST['room']) ? $_POST['room'] : '';
+        $amount     = (float)(isset($_POST['amount']) ? $_POST['amount'] : 0);
+        $status     = isset($_POST['status']) ? $_POST['status'] : 'verified';
+        $message    = trim(isset($_POST['message']) ? $_POST['message'] : '');
+        $tat        = trim(isset($_POST['transferred_at']) ? $_POST['transferred_at'] : '');
+        $tat_db = null;
+        if ($tat !== '') {
+            $ts = strtotime(str_replace('T', ' ', $tat));
+            if ($ts !== false) $tat_db = date('Y-m-d H:i:s', $ts);
+        }
+
+        $errs = [];
+        if ($donor_name === '' || mb_strlen($donor_name) > 160) $errs[] = 'ชื่อไม่ถูกต้อง';
+        if (!in_array($room, ['A','B'], true))                   $errs[] = 'เลือกห้อง';
+        if ($amount <= 0 || $amount > 9999999)                   $errs[] = 'จำนวนเงินไม่ถูกต้อง';
+        if (!in_array($status, ['pending','verified','rejected'], true)) $errs[] = 'สถานะไม่ถูก';
+
+        // slip upload optional — ไม่มีก็ได้
+        $slip_path = null;
+        $new_slip_abs = null;
+        if (isset($_FILES['slip']) && $_FILES['slip']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $up = handle_upload('slip', $GLOBALS['CONFIG']['upload_dir'], $GLOBALS['CONFIG']['upload_url']);
+            if (is_array($up) && isset($up['error'])) {
+                $errs[] = $up['error'];
+            } elseif ($up) {
+                $slip_path = $up['path'];
+                $new_slip_abs = $up['abs'];
+            }
+        }
+
+        if ($errs) {
+            if ($new_slip_abs && is_file($new_slip_abs)) @unlink($new_slip_abs);
+            flash('err', implode(' / ', $errs));
+            redirect('donations.php?action=new');
+        }
+
+        $verified_at = ($status === 'pending') ? null : date('Y-m-d H:i:s');
+        $verified_by = ($status === 'pending') ? null : admin_id();
+        $created_at  = $tat_db ? $tat_db : date('Y-m-d H:i:s');
+
+        db_run(
+            'INSERT INTO donations
+                (campaign_id, donor_name, room, amount, transferred_at, slip_path, message,
+                 status, created_at, verified_at, verified_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$cid, $donor_name, $room, $amount, $tat_db, $slip_path, $message,
+             $status, $created_at, $verified_at, $verified_by]
+        );
+        flash('ok', 'เพิ่มรายการแล้ว');
+        redirect('donations.php?campaign=' . $cid);
+    }
+
     if ($op === 'save_edit' && $id > 0) {
         $cur = db_one('SELECT * FROM donations WHERE id = ?', [$id]);
         if (!$cur) { flash('err', 'ไม่พบรายการ'); redirect('donations.php'); }
@@ -155,6 +213,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect('donations.php' . ($qs ? '?' . http_build_query($qs) : ''));
 }
 
+// ---------- NEW view ----------
+if ($action === 'new') {
+    $all_campaigns = db_all('SELECT id, deceased_name FROM campaigns ORDER BY status = "active" DESC, created_at DESC');
+    $preselect_cid = isset($_GET['campaign']) ? (int)$_GET['campaign'] : 0;
+    ?>
+    <a class="back-link" href="donations.php">← กลับ</a>
+    <h1>เพิ่มรายการบริจาค (manual)</h1>
+    <p class="muted">สำหรับรายการที่อาจไม่มีรูปสลิป (เช่น import จากเดิม หรือเพื่อนแจ้งผ่าน LINE ตรงๆ)</p>
+
+    <form method="post" class="adm-form" enctype="multipart/form-data">
+      <?= csrf_field() ?>
+      <input type="hidden" name="op" value="save_new">
+
+      <label><span>แคมเปญ <em>*</em></span>
+        <select name="campaign_id" required>
+          <option value="">— เลือก —</option>
+          <?php foreach ($all_campaigns as $cc): ?>
+            <option value="<?= (int)$cc['id'] ?>" <?= $preselect_cid === (int)$cc['id'] ? 'selected' : '' ?>><?= e($cc['deceased_name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+
+      <div class="row">
+        <label><span>ชื่อผู้บริจาค <em>*</em></span>
+          <input name="donor_name" required maxlength="160"></label>
+        <label><span>ห้อง <em>*</em></span>
+          <select name="room" required>
+            <option value="">— เลือก —</option>
+            <option value="A">ห้อง A</option>
+            <option value="B">ห้อง B</option>
+          </select></label>
+      </div>
+
+      <div class="row">
+        <label><span>จำนวนเงิน <em>*</em></span>
+          <input type="number" name="amount" step="0.01" min="0.01" required></label>
+        <label><span>เวลาที่โอน (optional)</span>
+          <input type="datetime-local" name="transferred_at"></label>
+      </div>
+
+      <label><span>สถานะ</span>
+        <select name="status">
+          <option value="verified" selected>ยืนยันแล้ว</option>
+          <option value="pending">รอตรวจสอบ</option>
+          <option value="rejected">ปฏิเสธ</option>
+        </select>
+        <small class="muted">รายการที่ admin add เอง default = "ยืนยันแล้ว"</small>
+      </label>
+
+      <label><span>ข้อความ (optional)</span>
+        <textarea name="message" rows="2" maxlength="500"></textarea></label>
+
+      <fieldset>
+        <legend>รูปสลิป (optional)</legend>
+        <label><span>เลือกไฟล์รูป — ไม่มีก็ได้</span>
+          <input type="file" name="slip" accept="image/*">
+        </label>
+      </fieldset>
+
+      <div>
+        <button class="btn btn-primary" type="submit">+ เพิ่มรายการ</button>
+        <a class="btn" href="donations.php">ยกเลิก</a>
+      </div>
+    </form>
+    <?php
+    require __DIR__ . '/_footer.php';
+    exit;
+}
+
 // ---------- EDIT view ----------
 if ($action === 'edit' && $gid > 0) {
     $d = db_one('SELECT d.*, c.deceased_name FROM donations d JOIN campaigns c ON c.id = d.campaign_id WHERE d.id = ?', [$gid]);
@@ -243,7 +370,10 @@ $rows = db_all($sql, $params);
 
 $campaigns = db_all('SELECT id, deceased_name FROM campaigns ORDER BY created_at DESC');
 ?>
-<h1>รายการบริจาค</h1>
+<div class="page-head">
+  <h1>รายการบริจาค</h1>
+  <a href="donations.php?action=new<?= $camp > 0 ? '&campaign=' . $camp : '' ?>" class="btn btn-primary btn-sm">+ เพิ่มรายการ</a>
+</div>
 
 <form method="get" class="filter-bar">
   <select name="status">

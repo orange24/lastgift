@@ -354,6 +354,29 @@ em{color:#b15a3a;font-style:normal;margin-left:2px}
 .donate-form textarea:focus{
   outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(138,106,58,.15);
 }
+/* room pill selector — แทน <select> เพราะ LINE in-app browser มีบั๊ก */
+.donate-form .room-label{
+  display:block;font-size:14px;color:var(--ink-soft);margin-bottom:4px;
+}
+.donate-form .room-pills{display:flex;gap:10px}
+.donate-form .room-pill{
+  flex:1;cursor:pointer;position:relative;margin:0;
+}
+.donate-form .room-pill input{
+  position:absolute;opacity:0;pointer-events:none;
+}
+.donate-form .room-pill span{
+  display:block;padding:11px 12px;text-align:center;
+  background:#fff;border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);font-weight:500;font-size:14px;
+  transition:background .15s, border-color .15s, color .15s;
+}
+.donate-form .room-pill input:checked + span{
+  background:var(--accent);color:#fff;border-color:var(--accent);
+}
+.donate-form .room-pill input:focus + span{
+  box-shadow:0 0 0 3px rgba(138,106,58,.15);
+}
 /* native picker icon (datetime-local) */
 .donate-form input[type=datetime-local]::-webkit-calendar-picker-indicator{
   cursor:pointer;opacity:.55;filter:invert(35%) sepia(20%) saturate(700%) hue-rotate(5deg);
